@@ -1,0 +1,47 @@
+{
+	"Name": "TheraCue",
+	"Version": "0.1.0.0",
+	"Author": "andrevan",
+	"Actions": [
+		{
+			"Name": "Play Audio",
+			"UUID": "com.github.andr3van.theracue.playaudio",
+			"Icon": "imgs/actions/audio/icon",
+			"Tooltip": "Play an audio file with extended fade in/out (up to 30s).",
+			"PropertyInspectorPath": "ui/play-audio.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/audio/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		}
+	],
+	"Category": "TheraCue",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Stream Deck audio player with fades and volume control.",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 2,
+	"Software": {
+		"MinimumVersion": "6.5"
+	},
+	"OS": [
+		{
+			"Platform": "mac",
+			"MinimumVersion": "12"
+		},
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "20",
+		"Debug": "enabled"
+	},
+	"UUID": "com.github.andr3van.theracue"
+}

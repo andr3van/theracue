@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Play Audio Settings</title>
+  <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+  <link rel="stylesheet" href="https://sdpi-components.dev/releases/v4/sdpi-components.css">
+  <style>
+    .inline-group { display:flex; gap:6px; }
+    .inline-group > * { flex:1; }
+    .file-row { display:flex; gap:6px; margin-top: 3px; }
+    .file-row input[type=text]{ flex:1; }
+    .note { font-size:11px; opacity:.7; margin-top:4px; }
+    .volume-container { display: flex; align-items: center; gap: 10px; margin-top: 3px; }
+    .volume-container input[type=range] { flex: 1; }
+    .volume-container span { font-weight: bold; min-width: 40px; text-align: right; }
+    select { margin-top: 3px; }
+    input[type=text], input[type=file], select {
+      padding-top: 4px !important;
+      padding-bottom: 4px !important;
+      background-color: var(--sdpi-backgroundColor) !important;
+      color: #d4d4d4 !important;
+    }
+    select option {
+      background-color: #2d2d2d !important;
+      color: #d4d4d4 !important;
+    }
+    input[type=file]::file-selector-button {
+      padding-top: 4px;
+      padding-bottom: 4px;
+      background-color: var(--sdpi-backgroundColor);
+      color: #d4d4d4;
+      border: 1px solid #555;
+      cursor: pointer;
+    }
+    input[type=file]::file-selector-button:hover {
+      background-color: #3d3d3d;
+    }
+  </style>
+</head>
+<body>
+  <sdpi-item label="File">
+    <div class="file-row">
+      <input id="filePath" type="text" placeholder="Choose a file..." />
+      <input id="fileChooser" type="file" accept="audio/*" />
+    </div>
+  </sdpi-item>
+  <sdpi-item label="Action">
+    <select id="playMode"></select>
+  </sdpi-item>
+  <sdpi-item label="Fade">
+    <select id="fadeMode"></select>
+  </sdpi-item>
+  <sdpi-item label="Fade Duration" id="fadeBothDurationItem" style="display:none;">
+    <select id="fadeBothDuration"></select>
+  </sdpi-item>
+  <sdpi-item label="Fade In" id="fadeInItem" style="display:none;">
+    <select id="fadeInDuration"></select>
+  </sdpi-item>
+  <sdpi-item label="Fade Out" id="fadeOutItem" style="display:none;">
+    <select id="fadeOutDuration"></select>
+  </sdpi-item>
+  <sdpi-item label="Volume">
+    <div class="volume-container">
+      <input id="volumePercent" type="range" min="0" max="100" value="75" />
+      <span id="volumeLabel">75%</span>
+    </div>
+  </sdpi-item>
+
+  <script>
+  (function(){
+    // Stream Deck connection
+    let websocket = null;
+    let uuid = null;
+    let actionInfo = {};
+    let settings = {};
+
+    // Connect to Stream Deck
+    function connectElgatoStreamDeckSocket(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+      uuid = inUUID;
+      actionInfo = JSON.parse(inActionInfo || '{}');
+      settings = actionInfo.payload?.settings || {};
+      
+      console.log('PropertyInspector initialized - uuid:', uuid, 'settings:', settings);
+      
+      websocket = new WebSocket('ws://127.0.0.1:' + inPort);
+      
+      websocket.onopen = function() {
+        const json = { event: inRegisterEvent, uuid: uuid };
+        websocket.send(JSON.stringify(json));
+        
+        // Initialize UI with current settings
+        updateUI(settings);
+      };
+      
+      websocket.onmessage = function(evt) {
+        const jsonObj = JSON.parse(evt.data);
+        const event = jsonObj.event;
+        const jsonPayload = jsonObj.payload || {};
+        
+        if (event === 'didReceiveSettings') {
+          settings = jsonPayload.settings || {};
+          updateUI(settings);
+        }
+      };
+    }
+    
+    // Make it globally available for Stream Deck to call
+    window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
+    
+    // Get DOM elements
+    const els = {
+      filePath: document.getElementById('filePath'),
+      fileChooser: document.getElementById('fileChooser'),
+      playMode: document.getElementById('playMode'),
+      fadeMode: document.getElementById('fadeMode'),
+      fadeBothDuration: document.getElementById('fadeBothDuration'),
+      fadeBothDurationItem: document.getElementById('fadeBothDurationItem'),
+      fadeInDuration: document.getElementById('fadeInDuration'),
+      fadeInItem: document.getElementById('fadeInItem'),
+      fadeOutDuration: document.getElementById('fadeOutDuration'),
+      fadeOutItem: document.getElementById('fadeOutItem'),
+      volume: document.getElementById('volumePercent')
+    };
+
+    // Helper function to extract filename without extension
+    function getFileNameWithoutExtension(filePath) {
+      if (!filePath) return '';
+      
+      // Decode URL-encoded path
+      let decoded = filePath;
+      try {
+        decoded = decodeURIComponent(filePath);
+      } catch (e) {
+        // Use original if decode fails
+      }
+      
+      // Extract basename and remove extension
+      const parts = decoded.split(/[/\\]/); // Handle both / and \ path separators
+      const basename = parts[parts.length - 1];
+      return basename.replace(/\.[^.]+$/, '');
+    }
+
+    // Helper function to determine fade mode from settings
+    function getFadeModeFromSettings(s) {
+      // If fadeMode is explicitly saved, use that
+      if (s.fadeMode) {
+        return s.fadeMode;
+      }
+      
+      // Otherwise, infer from fade values (for backwards compatibility)
+      // Use ?? to properly handle 0 as a valid value (different from undefined)
+      const fadeIn = s.fadeInSeconds ?? 0;
+      const fadeOut = s.fadeOutSeconds ?? 0;
+      
+      if (fadeIn === 0 && fadeOut === 0) return 'none';
+      if (fadeIn > 0 && fadeOut > 0) {
+        // If both are set and equal, it's "both" mode, otherwise "separate"
+        return fadeIn === fadeOut ? 'both' : 'separate';
+      }
+      // If only one is set, it's separate mode
+      return 'separate';
+    }
+
+    // Update UI from settings
+    function updateUI(s) {
+      console.log('[PropertyInspector] updateUI called with settings:', JSON.stringify(s));
+      console.log('[PropertyInspector] Current uuid (context):', uuid);
+      
+      if (s.filePath !== undefined && els.filePath) {
+        // Display only filename without extension in the input field
+        els.filePath.value = getFileNameWithoutExtension(s.filePath);
+        // Store the full path in a data attribute for later use
+        els.filePath.dataset.fullPath = s.filePath || '';
+      }
+      if (s.playMode !== undefined && els.playMode) els.playMode.value = s.playMode;
+      
+      // Update fade mode and duration controls
+      if (els.fadeMode) {
+        const fadeMode = getFadeModeFromSettings(s);
+        els.fadeMode.value = fadeMode;
+        
+        // Show/hide duration controls based on fade mode
+        if (els.fadeBothDurationItem) {
+          els.fadeBothDurationItem.style.display = fadeMode === 'both' ? '' : 'none';
+        }
+        if (els.fadeInItem) {
+          els.fadeInItem.style.display = fadeMode === 'separate' ? '' : 'none';
+        }
+        if (els.fadeOutItem) {
+          els.fadeOutItem.style.display = fadeMode === 'separate' ? '' : 'none';
+        }
+      }
+      
+      // Update duration values
+      // Use ?? (nullish coalescing) to properly handle 0 as a valid value
+      // Default to 0 (no fade) for new buttons
+      const fadeIn = s.fadeInSeconds ?? 0;
+      const fadeOut = s.fadeOutSeconds ?? 0;
+      
+      if (els.fadeBothDuration) {
+        // For "both" mode, use whichever is set (they should be equal)
+        const bothValue = Math.max(fadeIn, fadeOut);
+        els.fadeBothDuration.value = String(bothValue === 0 ? 5 : bothValue);  // Show 5 as default for "both" mode
+      }
+      
+      if (els.fadeInDuration) {
+        els.fadeInDuration.value = String(fadeIn);
+      }
+      
+      if (els.fadeOutDuration) {
+        els.fadeOutDuration.value = String(fadeOut);
+      }
+      
+      if (s.volumePercent !== undefined && els.volume) {
+        els.volume.value = String(s.volumePercent);
+        const label = document.getElementById('volumeLabel');
+        if (label) label.textContent = s.volumePercent + '%';
+      }
+    }
+
+    // Send settings to Stream Deck
+    function setSettings(newSettings) {
+      if (!websocket || !uuid) {
+        console.error('[PropertyInspector] Cannot send settings - websocket not connected! uuid:', uuid);
+        return;
+      }
+      
+      // Merge with existing settings
+      settings = { ...settings, ...newSettings };
+      console.log('[PropertyInspector] Sending settings for context:', uuid, 'settings:', JSON.stringify(settings));
+      
+      const json = {
+        event: 'setSettings',
+        context: uuid,
+        payload: settings
+      };
+      websocket.send(JSON.stringify(json));
+    }
+
+    // Initialize UI after DOM loads
+    document.addEventListener('DOMContentLoaded', function() {
+      // Populate select options
+      function opt(sel,v,t){ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o);}    
+      
+      if(els.playMode && !els.playMode.options.length){
+        opt(els.playMode,'play-stop','Play / Stop');
+        opt(els.playMode,'play-once','Play Once');
+        opt(els.playMode,'play-while-pressed','While Pressed');
+      }
+      if(els.fadeMode && !els.fadeMode.options.length){
+        opt(els.fadeMode,'none','No Fade');
+        opt(els.fadeMode,'separate','Separate Fade Effects');
+        opt(els.fadeMode,'both','Fade In and Out');
+      }
+      if(els.fadeBothDuration && !els.fadeBothDuration.options.length){ 
+        for(let i = 5; i <= 30; i += 5) opt(els.fadeBothDuration, String(i), i + 's'); 
+      }
+      if(els.fadeInDuration && !els.fadeInDuration.options.length){ 
+        opt(els.fadeInDuration, '0', 'No Fade In');
+        for(let i = 5; i <= 30; i += 5) opt(els.fadeInDuration, String(i), i + 's'); 
+      }
+      if(els.fadeOutDuration && !els.fadeOutDuration.options.length){ 
+        opt(els.fadeOutDuration, '0', 'No Fade Out');
+        for(let i = 5; i <= 30; i += 5) opt(els.fadeOutDuration, String(i), i + 's'); 
+      }
+
+      // Bind event handlers
+      if (els.filePath) {
+        // Make the input field read-only to prevent manual editing
+        els.filePath.setAttribute('readonly', 'readonly');
+        els.filePath.style.cursor = 'default';
+      }
+      
+      if (els.playMode) els.playMode.addEventListener('change', () => setSettings({playMode: els.playMode.value}));
+      
+      // Handle fade mode changes
+      if (els.fadeMode) {
+        els.fadeMode.addEventListener('change', () => {
+          const mode = els.fadeMode.value;
+          
+          // Show/hide appropriate duration controls
+          if (els.fadeBothDurationItem) {
+            els.fadeBothDurationItem.style.display = mode === 'both' ? '' : 'none';
+          }
+          if (els.fadeInItem) {
+            els.fadeInItem.style.display = mode === 'separate' ? '' : 'none';
+          }
+          if (els.fadeOutItem) {
+            els.fadeOutItem.style.display = mode === 'separate' ? '' : 'none';
+          }
+          
+          // Update settings based on fade mode
+          let newSettings = { fadeMode: mode };  // Save the mode explicitly
+          switch(mode) {
+            case 'none':
+              newSettings.fadeInSeconds = 0;
+              newSettings.fadeOutSeconds = 0;
+              newSettings.stopMode = 'immediate';
+              break;
+            case 'separate':
+              // Use current separate values or defaults
+              const fadeIn = Number(els.fadeInDuration.value) || 0;
+              const fadeOut = Number(els.fadeOutDuration.value) || 0;
+              newSettings.fadeInSeconds = fadeIn;
+              newSettings.fadeOutSeconds = fadeOut;
+              newSettings.stopMode = fadeOut > 0 ? 'fade' : 'immediate';
+              break;
+            case 'both':
+              // Use same duration for both
+              const duration = Number(els.fadeBothDuration.value) || 5;
+              newSettings.fadeInSeconds = duration;
+              newSettings.fadeOutSeconds = duration;
+              newSettings.stopMode = 'fade';
+              break;
+          }
+          setSettings(newSettings);
+        });
+      }
+      
+      // Handle "both" fade duration changes
+      if (els.fadeBothDuration) {
+        els.fadeBothDuration.addEventListener('change', () => {
+          const duration = Number(els.fadeBothDuration.value);
+          setSettings({fadeMode: 'both', fadeInSeconds: duration, fadeOutSeconds: duration, stopMode: 'fade'});
+        });
+      }
+      
+      // Handle separate fade in duration changes
+      if (els.fadeInDuration) {
+        els.fadeInDuration.addEventListener('change', () => {
+          const fadeIn = Number(els.fadeInDuration.value);
+          const fadeOut = Number(els.fadeOutDuration.value) || 0;
+          setSettings({
+            fadeMode: 'separate',
+            fadeInSeconds: fadeIn, 
+            stopMode: fadeOut > 0 ? 'fade' : 'immediate'
+          });
+        });
+      }
+      
+      // Handle separate fade out duration changes
+      if (els.fadeOutDuration) {
+        els.fadeOutDuration.addEventListener('change', () => {
+          const fadeOut = Number(els.fadeOutDuration.value);
+          setSettings({
+            fadeMode: 'separate',
+            fadeOutSeconds: fadeOut, 
+            stopMode: fadeOut > 0 ? 'fade' : 'immediate'
+          });
+        });
+      }
+      
+      if (els.volume) {
+        els.volume.addEventListener('input', () => {
+          const vol = Number(els.volume.value);
+          const label = document.getElementById('volumeLabel');
+          if (label) label.textContent = vol + '%';
+          setSettings({volumePercent: vol});
+        });
+      }
+      
+      if (els.fileChooser) {
+        els.fileChooser.addEventListener('change', () => {
+          const f = els.fileChooser.files[0];
+          if (!f) return;
+          const full = f.path || f.name;
+          // Display only the filename without extension
+          els.filePath.value = getFileNameWithoutExtension(full);
+          // Store full path in data attribute
+          els.filePath.dataset.fullPath = full;
+          // Send full path to settings
+          setSettings({filePath: full});
+        });
+      }
+    });
+
+  })();
+  </script>
+</body>
+</html>
