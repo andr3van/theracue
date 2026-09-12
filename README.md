@@ -109,7 +109,7 @@ There is currently **no bundled Windows FFmpeg binary**. Windows support is unte
 
 - Action not showing: restart Stream Deck, then check logs (Help -> Open Logs Folder).
 - No audio: verify file path, format, and logs. Try a shorter file name/path.
-- Fade not working: ensure fade duration is set and stop mode is "fade."
+- Fade not working: ensure a fade duration is set (e.g., 5s) and that a fade-out effect is enabled (either via "Fade In and Out" or a non-zero "Fade Out" duration).
 
 ## Contributing
 
@@ -117,7 +117,7 @@ Issues and pull requests are welcome. For larger changes, open an issue first to
 
 ## License
 
-TBD. Add a license file and update this section before publishing.
+[MIT License](LICENSE)
 
 ## Support
 
